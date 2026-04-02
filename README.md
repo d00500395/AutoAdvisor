@@ -4,8 +4,11 @@ A full-stack web application that helps drivers diagnose vehicle symptoms using 
 
 ---
 
-## Wireframe PDF -- Created using Visily
-[View PDF Document](wireframes.pdf)
+## Wireframe -- Created using Visily
+![](wireframes/visily-my-garage.jpg)
+![](wireframes/visily-add-vehicle.jpg)
+![](wireframes/visily-describe-symptom.jpg)
+![](wireframes/visily-diagnosis-results.jpg)
 
 ## Storyboard Link and text description -- Written using Figma and ChatGPT
 
