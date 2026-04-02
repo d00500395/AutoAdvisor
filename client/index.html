@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoAdvisor — Vehicle Selection</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Global Header — persistent vehicle display -->
+    <header class="site-header">
+      <div class="header-inner">
+        <h1 class="logo">AutoAdvisor</h1>
+        <nav class="header-nav">
+          <router-link to="/" class="nav-link">Home</router-link>
+          <router-link to="/diagnose" class="nav-link nav-link--primary">New Diagnosis</router-link>
+          <template v-if="currentUser">
+            <router-link to="/vehicles" class="nav-link">My Garage</router-link>
+            <span class="nav-user">{{ currentUser.username }}</span>
+            <button class="btn btn--outline btn--small" @click="logout">Logout</button>
+          </template>
+          <template v-else>
+            <router-link to="/login" class="nav-link">Sign In</router-link>
+          </template>
+        </nav>
+      </div>
+      <!-- Vehicle bar hidden for now -->
+    </header>
+
+    <!-- Router view -->
+    <main class="main-content">
+      <router-view></router-view>
+    </main>
+  </div>
+
+  <!-- Vue 3 + Vue Router via CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.prod.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

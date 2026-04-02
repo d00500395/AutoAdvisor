@@ -1,0 +1,66 @@
+<div>
+  <h2 class="page-title">Dashboard</h2>
+  <p class="page-subtitle">Welcome to AutoAdvisor. Select or add a vehicle to get started with an AI-powered diagnosis.</p>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <h3 class="card__title">Quick Actions</h3>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <router-link to="/diagnose" class="btn btn--primary">New Diagnosis</router-link>
+      <router-link to="/vehicles" class="btn btn--outline">My Garage</router-link>
+    </div>
+  </div>
+
+  <!-- Past Diagnoses -->
+  <div class="card" style="margin-top:1.5rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.5rem;">
+      <h3 class="card__title" style="margin-bottom:0;">Past Diagnoses</h3>
+      <button v-if="diagnoses.length > 0" class="btn btn--outline btn--small" style="color:var(--color-danger);border-color:var(--color-danger);" @click="showDeleteAllModal = true">Delete All</button>
+    </div>
+    <div v-if="loading" style="color:var(--color-text-muted);">Loading... <span class="spinner"></span></div>
+    <div v-else-if="diagnoses.length === 0" class="empty-state">
+      <div class="empty-state__title">No diagnoses yet</div>
+      <p>Run a diagnosis and save it to see it here.</p>
+    </div>
+    <div v-else>
+      <div v-for="d in diagnoses" :key="d._id" class="card" style="margin-bottom:0.75rem;padding:0.75rem 1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <strong>{{ vCtxStr(d) }}</strong>
+            <span style="color:var(--color-text-muted);margin-left:0.5rem;font-size:0.85rem;">{{ fmtDate(d.createdAt) }}</span>
+            <p style="margin:0.25rem 0 0;color:var(--color-text-muted);font-size:0.9rem;">
+              {{ d.symptomDescription?.length > 80 ? d.symptomDescription.slice(0, 80) + '...' : d.symptomDescription }}
+            </p>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <router-link :to="'/diagnose/' + d._id" class="btn btn--outline btn--small">View</router-link>
+            <button class="btn btn--outline btn--small" style="color:var(--color-danger);border-color:var(--color-danger);" @click="confirmDeleteOne(d._id)">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete All Confirmation Modal -->
+  <div v-if="showDeleteAllModal" class="modal-overlay" @click.self="showDeleteAllModal = false">
+    <div class="card modal-dialog">
+      <h3 class="card__title" style="margin-bottom:0.5rem;">Delete All Diagnoses</h3>
+      <p style="margin-bottom:1.25rem;color:var(--color-text-muted);">Are you sure you want to delete all saved diagnoses? This cannot be undone.</p>
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button class="btn btn--outline" @click="showDeleteAllModal = false">Cancel</button>
+        <button class="btn btn--primary" style="background:var(--color-danger);border-color:var(--color-danger);" @click="deleteAllDiagnoses">Delete All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete One Confirmation Modal -->
+  <div v-if="deleteOneId" class="modal-overlay" @click.self="deleteOneId = null">
+    <div class="card modal-dialog">
+      <h3 class="card__title" style="margin-bottom:0.5rem;">Delete Diagnosis</h3>
+      <p style="margin-bottom:1.25rem;color:var(--color-text-muted);">Are you sure you want to delete this diagnosis? This cannot be undone.</p>
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button class="btn btn--outline" @click="deleteOneId = null">Cancel</button>
+        <button class="btn btn--primary" style="background:var(--color-danger);border-color:var(--color-danger);" @click="confirmDeleteOneAction">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>

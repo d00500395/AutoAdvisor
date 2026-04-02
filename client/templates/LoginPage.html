@@ -1,0 +1,39 @@
+<div>
+  <div class="card" style="max-width:420px;margin:3rem auto;">
+    <h2 class="page-title" style="text-align:center;">{{ isRegister ? 'Create Account' : 'Sign In' }}</h2>
+    <p class="page-subtitle" style="text-align:center;">{{ isRegister ? 'Create an account to save vehicles and diagnoses.' : 'Sign in to access your garage and saved diagnoses.' }}</p>
+
+    <div v-if="error" class="alert alert--error" style="margin-bottom:1rem;">{{ error }}</div>
+
+    <div v-if="isRegister" class="form-group">
+      <label for="reg-email">Email</label>
+      <input id="reg-email" class="form-input" v-model="email" type="email" placeholder="you@example.com" />
+    </div>
+
+    <div class="form-group">
+      <label for="auth-username">Username</label>
+      <input id="auth-username" class="form-input" v-model="username" placeholder="Username" @keyup.enter="submit" />
+    </div>
+
+    <div class="form-group">
+      <label for="auth-password">Password</label>
+      <input id="auth-password" class="form-input" v-model="password" type="password" placeholder="Password" @keyup.enter="submit" />
+    </div>
+
+    <button class="btn btn--primary" style="width:100%;margin-top:0.5rem;" @click="submit" :disabled="loading">
+      <template v-if="loading">{{ isRegister ? 'Creating...' : 'Signing in...' }} <span class="spinner"></span></template>
+      <template v-else>{{ isRegister ? 'Create Account' : 'Sign In' }}</template>
+    </button>
+
+    <div style="text-align:center;margin-top:1rem;">
+      <router-link to="/diagnose" class="btn btn--outline" style="width:100%;">Continue without signing in</router-link>
+    </div>
+
+    <p style="text-align:center;margin-top:0.75rem;color:var(--color-text-muted);">
+      {{ isRegister ? 'Already have an account?' : "Don't have an account?" }}
+      <a href="#" @click.prevent="toggleMode" style="color:var(--color-primary);text-decoration:underline;">
+        {{ isRegister ? 'Sign In' : 'Create Account' }}
+      </a>
+    </p>
+  </div>
+</div>

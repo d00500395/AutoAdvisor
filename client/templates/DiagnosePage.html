@@ -1,0 +1,273 @@
+<div>
+  <h2 class="page-title">New Diagnosis</h2>
+  <p class="page-subtitle">Select your vehicle, then describe the symptom for an AI-powered diagnosis.</p>
+
+  <!-- Step indicators -->
+  <div class="steps">
+    <span class="step" :class="{ 'is-active': step === 1, 'is-done': step > 1 }">1. Select Vehicle</span>
+    <span class="step" :class="{ 'is-active': step === 2, 'is-done': step > 2 }">2. Describe Symptom</span>
+    <span class="step" :class="{ 'is-active': step === 3 || step === 5, 'is-done': step === 4 }">3. Diagnosis</span>
+  </div>
+
+  <!-- Error alert -->
+  <div v-if="error" class="alert alert--error">{{ error }}</div>
+
+  <!-- STEP 1: Vehicle Selection -->
+  <template v-if="step === 1">
+    <!-- Garage quick-select -->
+    <div v-if="garageVehicles.length > 0" class="card" style="margin-bottom:1rem;">
+      <h3 class="card__title">Quick Select from Garage</h3>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button v-for="v in garageVehicles" :key="v._id"
+                class="btn btn--outline btn--small"
+                @click="quickSelect(v)">
+          {{ v.nickname || vStr(v) }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Tabs: Manual / VIN -->
+    <vehicle-selection-form
+      :tab="tab"
+      :years="years"
+      :makes="makes"
+      :models="models"
+      :trim-options="trimOptions"
+      :loading-years="loadingYears"
+      :loading-makes="loadingMakes"
+      :loading-models="loadingModels"
+      :loading-trims="loadingTrims"
+      :selected-year="selectedYear"
+      :selected-make="selectedMake"
+      :selected-model="selectedModel"
+      :selected-trim="selectedTrim"
+      :selected-engine="selectedEngine"
+      :vin-input="vinInput"
+      :vin-error="vinError"
+      :vin-loading="vinLoading"
+      :can-confirm="canConfirm"
+      :vehicle-summary="vehicleSummary"
+      @update:tab="tab = $event"
+      @update:selectedYear="selectedYear = $event"
+      @update:selectedMake="selectedMake = $event"
+      @update:selectedModel="selectedModel = $event"
+      @update:selectedTrim="selectedTrim = $event"
+      @update:selectedEngine="selectedEngine = $event"
+      @update:vinInput="vinInput = $event"
+      @decode-vin="decodeVin"
+      @confirm="confirmVehicle"
+      @clear="clearVehicleSelection"
+    />
+  </template>
+
+  <!-- STEP 2: Describe Symptom -->
+  <template v-if="step === 2">
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="alert alert--success" aria-live="polite">
+        Vehicle: <strong>{{ vehicleSummary }}</strong>
+        <button class="btn btn--outline btn--small" style="margin-left:0.75rem;" @click="editSelection">Change</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card__title">Describe Your Symptom</h3>
+      <p style="color:var(--color-text-muted);margin-bottom:1rem;">Tell us what your car is doing wrong. Be as specific as possible — mention sounds, smells, when it happens, and any warning lights.</p>
+
+      <div v-if="diagnosisError" class="alert alert--error" style="margin-bottom:1rem;">{{ diagnosisError }}</div>
+
+      <div class="form-group">
+        <label for="symptom-input">What's the problem? <span style="color:var(--color-danger)">*</span></label>
+        <textarea id="symptom-input" class="form-input" v-model="symptomText" rows="4"
+                  placeholder='e.g. "Grinding noise when I brake at low speed" or "Check engine light is on and the car idles rough"'
+                  maxlength="1000" minlength="10" style="resize:vertical;"></textarea>
+        <p class="form-help">{{ symptomText.length }}/1000 characters (minimum 10)</p>
+      </div>
+
+      <div class="form-group">
+        <label for="mileage-input">Current Mileage (optional)</label>
+        <input id="mileage-input" class="form-input" v-model="mileage" type="number" min="0"
+               placeholder="e.g. 85000" style="max-width:200px;" />
+      </div>
+
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <button class="btn btn--primary" @click="submitSymptom" :disabled="symptomText.trim().length < 10">
+          Run Diagnosis
+        </button>
+        <button class="btn btn--outline" @click="saveToGarage" :disabled="saveLoading">
+          {{ saveLoading ? 'Saving...' : 'Save Vehicle to Garage' }}
+        </button>
+      </div>
+      <div v-if="saveMessage" class="alert" :class="saveMessage.includes('saved') ? 'alert--success' : 'alert--warning'" style="margin-top:0.75rem;">
+        {{ saveMessage }}
+      </div>
+    </div>
+  </template>
+
+  <!-- STEP 3: Agent Running -->
+  <template v-if="step === 3">
+    <div class="card" style="text-align:center;padding:3rem;">
+      <div class="spinner" style="width:2.5rem;height:2.5rem;margin:0 auto 1rem;"></div>
+      <h3 style="margin-bottom:0.5rem;">Analyzing Your Symptom</h3>
+      <p style="color:var(--color-text-muted);">{{ agentStatus }}</p>
+      <p style="color:var(--color-text-muted);font-size:0.85rem;margin-top:1rem;">Vehicle: {{ vehicleSummary }}</p>
+    </div>
+  </template>
+
+  <!-- STEP 4: Diagnosis Results -->
+  <template v-if="step === 4 && diagnosisResult">
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="alert alert--success" aria-live="polite">
+        Vehicle: <strong>{{ vehicleSummary }}</strong>
+      </div>
+    </div>
+
+    <!-- RAG disclaimer when service manual data wasn't available -->
+    <div v-if="diagnosisResult.ragAvailable === false" class="alert alert--warning" style="margin-bottom:1rem;" role="alert">
+      <strong>First-time analysis for this vehicle.</strong>
+      Service manual data is being loaded in the background. Run a second diagnosis for this vehicle to get results informed by factory repair manuals.
+    </div>
+
+    <div class="card" style="margin-bottom:1rem;">
+      <h3 class="card__title">Diagnosis Results</h3>
+
+      <!-- Urgency Badge -->
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+        <span class="badge" :class="{
+          'badge--danger': diagnosisResult.diagnosisResult?.urgency === 'Stop driving',
+          'badge--warning': diagnosisResult.diagnosisResult?.urgency === 'Fix soon',
+          'badge--info': diagnosisResult.diagnosisResult?.urgency === 'Drive carefully'
+        }">
+          {{ diagnosisResult.diagnosisResult?.urgency || 'Unknown' }}
+        </span>
+        <span class="badge badge--secondary">
+          Confidence: {{ diagnosisResult.diagnosisResult?.confidenceLevel || 'unknown' }}
+        </span>
+        <span class="badge badge--secondary">
+          {{ diagnosisResult.diagnosisResult?.repairDifficulty || 'Unknown difficulty' }}
+        </span>
+      </div>
+
+      <!-- Likely Cause -->
+      <div style="margin-bottom:1.25rem;">
+        <h4 style="margin-bottom:0.35rem;color:var(--color-text);">Likely Cause</h4>
+        <p>{{ diagnosisResult.diagnosisResult?.likelyCause }}</p>
+      </div>
+
+      <!-- Additional Notes -->
+      <div v-if="diagnosisResult.diagnosisResult?.additionalNotes" style="margin-bottom:1.25rem;">
+        <h4 style="margin-bottom:0.35rem;color:var(--color-text);">Additional Notes</h4>
+        <p style="color:var(--color-text-muted);">{{ diagnosisResult.diagnosisResult.additionalNotes }}</p>
+      </div>
+
+      <!-- Recommended Parts -->
+      <div v-if="diagnosisResult.diagnosisResult?.recommendedParts?.length > 0">
+        <h4 style="margin-bottom:0.5rem;color:var(--color-text);">Recommended Parts</h4>
+        <table class="parts-table">
+          <thead>
+            <tr>
+              <th>Part</th>
+              <th>Category</th>
+              <th>Probability</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(part, i) in diagnosisResult.diagnosisResult.recommendedParts" :key="i">
+              <td>{{ part.partName }}</td>
+              <td>{{ part.partCategory }}</td>
+              <td>{{ part.causationProbability != null ? part.causationProbability + '%' : '—' }}</td>
+              <td>
+                <button class="btn btn--outline btn--small"
+                        @click="getReplacementProcess(part)"
+                        :disabled="replacementLoading === part.partName">
+                  <template v-if="replacementLoading === part.partName">
+                    Generating... <span class="spinner"></span>
+                  </template>
+                  <template v-else-if="replacementResults[part.partName]?.error">
+                    Retry
+                  </template>
+                  <template v-else-if="replacementResults[part.partName]">
+                    {{ replacementVisible[part.partName] ? 'Hide Steps' : 'View Steps' }}
+                  </template>
+                  <template v-else>Replacement Steps</template>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Replacement process results (shown below table per part) -->
+        <div v-for="(part, i) in diagnosisResult.diagnosisResult.recommendedParts" :key="'rp-' + i">
+          <div v-if="replacementResults[part.partName] && !replacementResults[part.partName].error && replacementVisible[part.partName]"
+               class="card" style="margin-top:1rem;background:var(--color-bg-alt, #f8f9fa);">
+            <h4 style="margin-bottom:0.5rem;">{{ part.partName }} — Replacement Process</h4>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+              <span class="badge badge--secondary">{{ replacementResults[part.partName].difficulty }}</span>
+              <span class="badge badge--secondary">{{ replacementResults[part.partName].estimatedTime }}</span>
+            </div>
+            <ol style="margin:0 0 1rem 1.25rem;line-height:1.7;">
+              <li v-for="(s, si) in replacementResults[part.partName].steps" :key="si">{{ s }}</li>
+            </ol>
+            <div v-if="replacementResults[part.partName].tools?.length" style="margin-bottom:0.75rem;">
+              <strong>Tools needed:</strong> {{ replacementResults[part.partName].tools.join(', ') }}
+            </div>
+            <div v-if="replacementResults[part.partName].warnings?.length">
+              <div v-for="(w, wi) in replacementResults[part.partName].warnings" :key="wi"
+                   class="alert alert--warning" style="margin-top:0.5rem;">
+                ⚠️ {{ w }}
+              </div>
+            </div>
+          </div>
+          <div v-else-if="replacementResults[part.partName]?.error"
+               class="alert alert--error" style="margin-top:0.75rem;">
+            Failed to generate replacement steps for {{ part.partName }}: {{ replacementResults[part.partName].error }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn--outline" @click="editLastPrompt">Edit Prompt & Resubmit</button>
+      <button class="btn btn--primary" @click="newDiagnosis">New Diagnosis</button>
+      <button v-if="!diagnosisSaved" class="btn btn--outline" @click="saveDiagnosis">
+        Save Diagnosis
+      </button>
+      <span v-if="diagnosisSaveMsg" class="badge badge--success" style="font-size:0.9rem;">
+        {{ diagnosisSaveMsg }}
+      </span>
+    </div>
+  </template>
+
+  <!-- STEP 5: Clarifying Questions -->
+  <template v-if="step === 5">
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="alert alert--info" aria-live="polite">
+        The AI needs a bit more information to give you an accurate diagnosis.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card__title">Clarifying Questions</h3>
+      <div v-if="diagnosisError" class="alert alert--error" style="margin-bottom:1rem;">{{ diagnosisError }}</div>
+
+      <div v-for="(q, i) in clarifyingQuestions" :key="i" class="form-group">
+        <label>{{ q }}</label>
+        <input class="form-input" v-model="clarifyingAnswers[i]" :placeholder="'Your answer...'" />
+      </div>
+
+      <button class="btn btn--primary" @click="submitClarification">Submit Answers</button>
+    </div>
+  </template>
+
+  <!-- Unsaved Diagnosis Modal -->
+  <div v-if="unsavedModal" class="modal-overlay" @click.self="unsavedChoice('delete')">
+    <div class="card modal-dialog">
+      <h3 class="card__title" style="margin-bottom:0.5rem;">Unsaved Diagnosis</h3>
+      <p style="margin-bottom:1.25rem;color:var(--color-text-muted);">Would you like to save this diagnosis or delete it?</p>
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button class="btn btn--outline" style="color:var(--color-danger);border-color:var(--color-danger);" @click="unsavedChoice('delete')">Delete</button>
+        <button class="btn btn--primary" @click="unsavedChoice('save')">Save</button>
+      </div>
+    </div>
+  </div>
+</div>

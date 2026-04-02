@@ -1,0 +1,101 @@
+<div>
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+    <div>
+      <h2 class="page-title" style="margin-bottom:0;">My Garage</h2>
+      <p class="page-subtitle" style="margin-bottom:0;">Manage your saved vehicles (up to 5).</p>
+    </div>
+    <button class="btn btn--primary" @click="showForm = !showForm">
+      {{ showForm ? 'Cancel' : '+ Add Vehicle' }}
+    </button>
+  </div>
+
+  <div v-if="error" class="alert alert--error">{{ error }}</div>
+
+  <!-- Add vehicle form -->
+  <div v-if="showForm" class="card" style="margin-bottom:1.5rem;">
+    <h3 class="card__title">Add a Vehicle</h3>
+    <div v-if="formError" class="alert alert--error">{{ formError }}</div>
+    <vehicle-selection-form
+      :tab="tab"
+      :years="years"
+      :makes="makes"
+      :models="models"
+      :trim-options="trimOptions"
+      :loading-years="loadingYears"
+      :loading-makes="loadingMakes"
+      :loading-models="loadingModels"
+      :loading-trims="loadingTrims"
+      :selected-year="selectedYear"
+      :selected-make="selectedMake"
+      :selected-model="selectedModel"
+      :selected-trim="selectedTrim"
+      :selected-engine="selectedEngine"
+      :vin-input="vinInput"
+      :vin-error="vinError"
+      :vin-loading="vinLoading"
+      :show-confirm="false"
+      @update:tab="tab = $event"
+      @update:selectedYear="selectedYear = $event"
+      @update:selectedMake="selectedMake = $event"
+      @update:selectedModel="selectedModel = $event"
+      @update:selectedTrim="selectedTrim = $event"
+      @update:selectedEngine="selectedEngine = $event"
+      @update:vinInput="vinInput = $event"
+      @decode-vin="decodeVin"
+    />
+    <div class="form-group" style="margin-top:1rem;">
+      <label>Nickname</label>
+      <input class="form-input" v-model="nickname" placeholder="e.g. My Daily Driver" maxlength="30" />
+    </div>
+    <button class="btn btn--primary" @click="addVehicle" :disabled="formLoading">
+      {{ formLoading ? 'Saving...' : 'Save Vehicle' }}
+    </button>
+  </div>
+
+  <!-- Vehicle list -->
+  <div v-if="loading" style="color:var(--color-text-muted);padding:2rem 0;">Loading... <span class="spinner"></span></div>
+
+  <div v-else-if="vehicles.length === 0" class="empty-state">
+    <div class="empty-state__icon"><i class="fas fa-garage"></i></div>
+    <div class="empty-state__title">Your garage is empty</div>
+    <p>Add your first vehicle to get started.</p>
+  </div>
+
+  <div v-else class="garage-grid">
+    <div v-for="v in vehicles" :key="v._id"
+         class="garage-card" :class="{ 'is-default': v.isDefault }">
+      <span v-if="v.isDefault" class="garage-card__default-badge">Default</span>
+      <div v-if="editingNicknameId === v._id" style="margin-bottom:0.5rem;">
+        <input class="form-input" v-model="nicknameDraft" maxlength="30" placeholder="Vehicle nickname" />
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+          <button class="btn btn--primary btn--small" @click="saveNickname(v._id)">Save Nickname</button>
+          <button class="btn btn--outline btn--small" @click="cancelNicknameEdit">Cancel</button>
+        </div>
+      </div>
+      <div v-else-if="v.nickname" class="garage-card__nickname">{{ v.nickname }}</div>
+      <div class="garage-card__vehicle">{{ vStr(v) }}</div>
+      <div class="garage-card__details">
+        {{ [v.engine, v.bodyStyle, v.driveType].filter(Boolean).join(' · ') }}
+      </div>
+      <div class="garage-card__actions">
+        <button v-if="!v.isDefault" class="btn btn--outline btn--small" @click="setDefault(v._id)">Set Default</button>
+        <button v-if="editingNicknameId !== v._id" class="btn btn--outline btn--small" @click="beginNicknameEdit(v)">
+          {{ v.nickname ? 'Edit Nickname' : 'Add Nickname' }}
+        </button>
+        <button class="btn btn--outline btn--small" style="color:var(--color-danger);border-color:var(--color-danger);" @click="confirmRemove(v._id)">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remove Vehicle Confirmation Modal -->
+  <div v-if="removeModalId" class="modal-overlay" @click.self="removeModalId = null">
+    <div class="card modal-dialog">
+      <h3 class="card__title" style="margin-bottom:0.5rem;">Remove Vehicle</h3>
+      <p style="margin-bottom:1.25rem;color:var(--color-text-muted);">Are you sure you want to remove this vehicle from your garage?</p>
+      <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+        <button class="btn btn--outline" @click="removeModalId = null">Cancel</button>
+        <button class="btn btn--primary" style="background:var(--color-danger);border-color:var(--color-danger);" @click="confirmRemoveAction">Remove</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,27 @@
+{
+  "name": "autoadvisor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AutoAdvisor — Vehicle Selection Page with ACES fitment data",
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "seed": "node server/seed.js"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.36",
+    "@langchain/langgraph": "^1.2.6",
+    "@langchain/ollama": "^1.2.6",
+    "@langchain/textsplitters": "^1.0.1",
+    "bcrypt": "^6.0.0",
+    "cheerio": "^1.2.0",
+    "connect-mongo": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.3.2",
+    "express-session": "^1.19.0",
+    "mongoose": "^8.4.0",
+    "zod": "^4.3.6"
+  }
+}
