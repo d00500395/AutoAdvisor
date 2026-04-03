@@ -101,7 +101,8 @@ API_BASES.forEach(mountApiRoutes);
 app.use(express.static(CLIENT_DIR));
 
 if (APP_BASE_PATH) {
-  app.get(APP_BASE_PATH, (_req, res) => {
+  app.get(APP_BASE_PATH, (req, res, next) => {
+    if (req.path !== APP_BASE_PATH) return next();
     res.redirect(`${APP_BASE_PATH}/`);
   });
   app.use(APP_BASE_PATH, express.static(CLIENT_DIR));
