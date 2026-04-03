@@ -6,9 +6,34 @@
 const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
 const { createRouter, createWebHistory, useRoute, onBeforeRouteLeave } = VueRouter;
 
+function normalizeBasePath(basePath = '/') {
+  if (!basePath || basePath === '/') return '/';
+  return `/${String(basePath).replace(/^\/+|\/+$/g, '')}/`;
+}
+
+const appScriptSrc = document.currentScript?.src
+  || document.querySelector('script[src$="app.js"]')?.src
+  || window.location.href;
+
+let APP_BASE_PATH = '/';
+if (window.location.protocol !== 'file:') {
+  try {
+    const scriptUrl = new URL(appScriptSrc, window.location.href);
+    APP_BASE_PATH = normalizeBasePath(scriptUrl.pathname.replace(/app\.js$/, ''));
+  } catch {
+    APP_BASE_PATH = '/';
+  }
+}
+
+function appPath(path = '') {
+  const cleaned = String(path || '').replace(/^\/+/, '');
+  if (!cleaned) return APP_BASE_PATH;
+  return APP_BASE_PATH === '/' ? `/${cleaned}` : `${APP_BASE_PATH}${cleaned}`;
+}
+
 const API = window.location.protocol === 'file:'
   ? 'http://localhost:3000/api'
-  : `${window.location.origin}/api`;
+  : `${window.location.origin}${appPath('api')}`;
 
 // ─────────────────────────────────────────────────────────────────────
 // Shared auth state — module-level reactive ref used by guard + root app
@@ -19,7 +44,7 @@ const authUser = ref(null);
 // Template loader — fetches external .html template files
 // ─────────────────────────────────────────────────────────────────────
 async function loadTemplate(name) {
-  const res = await fetch(`/templates/${name}.html`);
+  const res = await fetch(appPath(`templates/${name}.html`));
   if (!res.ok) throw new Error(`Failed to load template: ${name}`);
   return res.text();
 }
@@ -1111,7 +1136,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(APP_BASE_PATH),
   routes,
 });
 

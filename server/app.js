@@ -52,6 +52,15 @@ const sessionCookieSecure = process.env.SESSION_COOKIE_SECURE
   ? process.env.SESSION_COOKIE_SECURE === 'true'
   : IS_PROD;
 const sessionCookieDomain = process.env.SESSION_COOKIE_DOMAIN;
+const CLIENT_DIR = path.join(__dirname, '..', 'client');
+
+function normalizeBasePath(basePath = '/') {
+  if (!basePath || basePath === '/') return '';
+  return `/${String(basePath).replace(/^\/+|\/+$/g, '')}`;
+}
+
+const APP_BASE_PATH = normalizeBasePath(process.env.APP_BASE_PATH || '/');
+const API_BASES = APP_BASE_PATH ? ['/api', `${APP_BASE_PATH}/api`] : ['/api'];
 
 // Middleware
 app.use(cors({ origin: corsOrigin, credentials: true }));
@@ -71,25 +80,41 @@ app.use(session({
   },
 }));
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, env: NODE_ENV });
-});
+function mountApiRoutes(apiBase) {
+  app.get(`${apiBase}/health`, (_req, res) => {
+    res.json({ ok: true, env: NODE_ENV, basePath: APP_BASE_PATH || '/' });
+  });
 
-// Serve static frontend files
-app.use(express.static(path.join(__dirname, '..', 'client')));
+  // Public API routes (no auth required)
+  app.use(`${apiBase}/users`, userRoutes);
+  app.use(`${apiBase}/vehicles`, vehicleRoutes);
 
-// Public API routes (no auth required)
-app.use('/api/users', userRoutes);
-app.use('/api/vehicles', vehicleRoutes);
+  // Protected API routes (require login)
+  app.use(`${apiBase}/garage`, requireAuth, garageRoutes);
+  app.use(`${apiBase}/diagnoses`, optionalAuth, diagnosisRoutes);
+  app.use(`${apiBase}/rag`, ragRoutes);
+}
 
-// Protected API routes (require login)
-app.use('/api/garage', requireAuth, garageRoutes);
-app.use('/api/diagnoses', optionalAuth, diagnosisRoutes);
-app.use('/api/rag', ragRoutes);
+API_BASES.forEach(mountApiRoutes);
+
+// Serve static frontend files from both root and optional subpath.
+app.use(express.static(CLIENT_DIR));
+
+if (APP_BASE_PATH) {
+  app.get(APP_BASE_PATH, (_req, res) => {
+    res.redirect(`${APP_BASE_PATH}/`);
+  });
+  app.use(APP_BASE_PATH, express.static(CLIENT_DIR));
+
+  app.get(`${APP_BASE_PATH}/*`, (req, res, next) => {
+    if (req.path.startsWith(`${APP_BASE_PATH}/api`)) return next();
+    res.sendFile(path.join(CLIENT_DIR, 'index.html'));
+  });
+}
 
 // SPA fallback — serve index.html for any non-API route
 app.get(/^\/(?!api).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'client', 'index.html'));
+  res.sendFile(path.join(CLIENT_DIR, 'index.html'));
 });
 
 // Connect to MongoDB and start server
