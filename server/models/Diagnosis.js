@@ -46,4 +46,14 @@ const diagnosisSchema = new Schema({
   status:              { type: String, enum: ['pending', 'clarifying', 'complete', 'error'], default: 'pending' },
 }, { timestamps: true });
 
+// Automatically expire guest diagnoses after 24 hours while preserving signed-in users' records.
+diagnosisSchema.index(
+  { createdAt: 1 },
+  {
+    name: 'guest_diagnosis_ttl_24h',
+    expireAfterSeconds: 24 * 60 * 60,
+    partialFilterExpression: { userId: { $exists: false } },
+  }
+);
+
 module.exports = mongoose.model('Diagnosis', diagnosisSchema);

@@ -472,9 +472,16 @@ const HomePage = {
     const garageVehicles = ref([]);
     const diagnoses = ref([]);
     const loading = ref(true);
+    const isAuthenticated = computed(() => !!authUser.value);
 
     onMounted(async () => {
       try {
+        if (!isAuthenticated.value) {
+          garageVehicles.value = [];
+          diagnoses.value = [];
+          return;
+        }
+
         const [garageRes, diagRes] = await Promise.all([
           apiFetch('/garage').catch(() => []),
           apiFetch('/diagnoses').catch(() => []),
@@ -529,7 +536,7 @@ const HomePage = {
       diagnoses.value = [];
     }
 
-    return { garageVehicles, diagnoses, loading, vStr, vCtxStr, fmtDate, deleteDiagnosis, showDeleteAllModal, deleteAllDiagnoses, deleteOneId, confirmDeleteOne, confirmDeleteOneAction };
+    return { garageVehicles, diagnoses, loading, isAuthenticated, vStr, vCtxStr, fmtDate, deleteDiagnosis, showDeleteAllModal, deleteAllDiagnoses, deleteOneId, confirmDeleteOne, confirmDeleteOneAction };
   },
   template: '',
 };
@@ -543,6 +550,7 @@ const DiagnosePage = {
     const route = useRoute();
     const selector = useVehicleSelection();
     const step = ref(1);       // 1=select vehicle, 2=describe symptom, 3=agent running, 4=results, 5=clarifying
+    const isAuthenticated = computed(() => !!authUser.value);
 
     // Symptom input (Step 2)
     const symptomText = ref('');
@@ -677,8 +685,9 @@ const DiagnosePage = {
       }
     }
 
-    // Save diagnosis — record is already in DB, this marks it as explicitly saved
+    // Save diagnosis — only available for signed-in users
     function saveDiagnosis() {
+      if (!isAuthenticated.value) return;
       diagnosisSaved.value = true;
       diagnosisSaveMsg.value = 'Diagnosis saved!';
     }
@@ -715,6 +724,10 @@ const DiagnosePage = {
     // Prompt before leaving unsaved results
     async function promptUnsaved() {
       if (step.value === 4 && diagnosisResult.value && !diagnosisSaved.value) {
+        if (!isAuthenticated.value) {
+          await deleteDiagnosis();
+          return;
+        }
         await showUnsavedModal();
       }
     }
@@ -750,6 +763,10 @@ const DiagnosePage = {
     // Navigation guard — prompt to save when leaving via route change
     onBeforeRouteLeave(async () => {
       if (step.value === 4 && diagnosisResult.value && !diagnosisSaved.value) {
+        if (!isAuthenticated.value) {
+          await deleteDiagnosis();
+          return;
+        }
         await showUnsavedModal();
       }
     });
@@ -765,6 +782,11 @@ const DiagnosePage = {
     const saveMessage = ref('');
 
     async function saveToGarage() {
+      if (!isAuthenticated.value) {
+        saveMessage.value = 'Sign in to save vehicles to your garage.';
+        return;
+      }
+
       saveLoading.value = true;
       saveMessage.value = '';
       try {
@@ -918,6 +940,7 @@ const DiagnosePage = {
     return {
       ...selector,
       step,
+      isAuthenticated,
       confirmVehicle, editSelection, clearVehicleSelection,
       quickSelect,
       saveLoading, saveMessage, saveToGarage,

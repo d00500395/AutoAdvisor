@@ -93,7 +93,7 @@
         <button class="btn btn--primary" @click="submitSymptom" :disabled="symptomText.trim().length < 10">
           Run Diagnosis
         </button>
-        <button class="btn btn--outline" @click="saveToGarage" :disabled="saveLoading">
+        <button v-if="isAuthenticated" class="btn btn--outline" @click="saveToGarage" :disabled="saveLoading">
           {{ saveLoading ? 'Saving...' : 'Save Vehicle to Garage' }}
         </button>
       </div>
@@ -229,7 +229,7 @@
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
       <button class="btn btn--outline" @click="editLastPrompt">Edit Prompt & Resubmit</button>
       <button class="btn btn--primary" @click="newDiagnosis">New Diagnosis</button>
-      <button v-if="!diagnosisSaved" class="btn btn--outline" @click="saveDiagnosis">
+      <button v-if="isAuthenticated && !diagnosisSaved" class="btn btn--outline" @click="saveDiagnosis">
         Save Diagnosis
       </button>
       <span v-if="diagnosisSaveMsg" class="badge badge--success" style="font-size:0.9rem;">
@@ -263,10 +263,14 @@
   <div v-if="unsavedModal" class="modal-overlay" @click.self="unsavedChoice('delete')">
     <div class="card modal-dialog">
       <h3 class="card__title" style="margin-bottom:0.5rem;">Unsaved Diagnosis</h3>
-      <p style="margin-bottom:1.25rem;color:var(--color-text-muted);">Would you like to save this diagnosis or delete it?</p>
+      <p style="margin-bottom:1.25rem;color:var(--color-text-muted);">
+        {{ isAuthenticated ? 'Would you like to save this diagnosis or delete it?' : 'This diagnosis is not saved. Discard it?' }}
+      </p>
       <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
-        <button class="btn btn--outline" style="color:var(--color-danger);border-color:var(--color-danger);" @click="unsavedChoice('delete')">Delete</button>
-        <button class="btn btn--primary" @click="unsavedChoice('save')">Save</button>
+        <button class="btn btn--outline" style="color:var(--color-danger);border-color:var(--color-danger);" @click="unsavedChoice('delete')">
+          {{ isAuthenticated ? 'Delete' : 'Discard' }}
+        </button>
+        <button v-if="isAuthenticated" class="btn btn--primary" @click="unsavedChoice('save')">Save</button>
       </div>
     </div>
   </div>

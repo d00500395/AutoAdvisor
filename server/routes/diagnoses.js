@@ -3,9 +3,65 @@ const router = express.Router();
 const Diagnosis = require('../models/Diagnosis');
 const { runDiagnosis, generateReplacementProcess } = require('../agent/graph');
 
+const GUEST_DIAG_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+async function cleanupExpiredGuestDiagnoses() {
+  const cutoff = new Date(Date.now() - GUEST_DIAG_RETENTION_MS);
+  await Diagnosis.deleteMany({
+    userId: { $exists: false },
+    createdAt: { $lt: cutoff },
+  });
+}
+
+function rememberGuestDiagnosis(req, diagnosisId) {
+  if (!req.session || req.session.userId) return;
+
+  const ids = Array.isArray(req.session.guestDiagnosisIds)
+    ? req.session.guestDiagnosisIds.map(String)
+    : [];
+  const id = String(diagnosisId);
+
+  if (!ids.includes(id)) ids.push(id);
+  req.session.guestDiagnosisIds = ids.slice(-25);
+}
+
+function buildDiagnosisAccessQuery(req, diagnosisId) {
+  if (req.session?.userId) {
+    return { _id: diagnosisId, userId: req.session.userId };
+  }
+
+  const guestIds = Array.isArray(req.session?.guestDiagnosisIds)
+    ? req.session.guestDiagnosisIds.map(String)
+    : [];
+
+  if (!guestIds.includes(String(diagnosisId))) {
+    return null;
+  }
+
+  return { _id: diagnosisId, userId: { $exists: false } };
+}
+
+function buildDiagnosisListFilter(req) {
+  if (req.session?.userId) {
+    return { userId: req.session.userId };
+  }
+
+  const guestIds = Array.isArray(req.session?.guestDiagnosisIds)
+    ? req.session.guestDiagnosisIds.map(String)
+    : [];
+
+  if (guestIds.length === 0) {
+    return null;
+  }
+
+  return { _id: { $in: guestIds }, userId: { $exists: false } };
+}
+
 // POST /api/diagnoses — Submit a symptom, triggers the AI agent
 router.post('/', async (req, res) => {
   try {
+    await cleanupExpiredGuestDiagnoses();
+
     const { symptomDescription, vehicleContext, vehicleId } = req.body;
 
     if (!symptomDescription || symptomDescription.trim().length < 10) {
@@ -23,6 +79,8 @@ router.post('/', async (req, res) => {
       vehicleContext,
       status: 'pending',
     });
+
+    rememberGuestDiagnosis(req, diagnosis._id);
 
     // Run the agent
     const agentResult = await runDiagnosis({
@@ -62,9 +120,13 @@ router.post('/', async (req, res) => {
 // POST /api/diagnoses/:id/followup — Submit answers to clarifying questions
 router.post('/:id/followup', async (req, res) => {
   try {
+    await cleanupExpiredGuestDiagnoses();
+
     const { clarifyingAnswers } = req.body;
-    const query = { _id: req.params.id };
-    if (req.session?.userId) query.userId = req.session.userId;
+    const query = buildDiagnosisAccessQuery(req, req.params.id);
+    if (!query) {
+      return res.status(404).json({ error: 'Diagnosis not found.' });
+    }
     const diagnosis = await Diagnosis.findOne(query);
 
     if (!diagnosis) {
@@ -104,7 +166,12 @@ router.post('/:id/followup', async (req, res) => {
 // GET /api/diagnoses — List all diagnoses
 router.get('/', async (req, res) => {
   try {
-    const filter = req.session?.userId ? { userId: req.session.userId } : { userId: { $exists: false } };
+    await cleanupExpiredGuestDiagnoses();
+
+    const filter = buildDiagnosisListFilter(req);
+    if (!filter) {
+      return res.json([]);
+    }
     if (req.query.vehicleId) filter.vehicleId = req.query.vehicleId;
     const diagnoses = await Diagnosis.find(filter).sort({ createdAt: -1 });
     res.json(diagnoses);
@@ -116,8 +183,10 @@ router.get('/', async (req, res) => {
 // GET /api/diagnoses/:id — Get a single diagnosis
 router.get('/:id', async (req, res) => {
   try {
-    const query = { _id: req.params.id };
-    if (req.session?.userId) query.userId = req.session.userId;
+    await cleanupExpiredGuestDiagnoses();
+
+    const query = buildDiagnosisAccessQuery(req, req.params.id);
+    if (!query) return res.status(404).json({ error: 'Diagnosis not found.' });
     const diagnosis = await Diagnosis.findOne(query);
     if (!diagnosis) return res.status(404).json({ error: 'Diagnosis not found.' });
     res.json(diagnosis);
@@ -129,8 +198,10 @@ router.get('/:id', async (req, res) => {
 // DELETE /api/diagnoses/:id — Delete a diagnosis
 router.delete('/:id', async (req, res) => {
   try {
-    const query = { _id: req.params.id };
-    if (req.session?.userId) query.userId = req.session.userId;
+    await cleanupExpiredGuestDiagnoses();
+
+    const query = buildDiagnosisAccessQuery(req, req.params.id);
+    if (!query) return res.status(404).json({ error: 'Diagnosis not found.' });
     const diagnosis = await Diagnosis.findOneAndDelete(query);
     if (!diagnosis) return res.status(404).json({ error: 'Diagnosis not found.' });
     res.json({ message: 'Diagnosis deleted.' });
@@ -150,12 +221,15 @@ router.post('/replacement-process', async (req, res) => {
 
     const result = await generateReplacementProcess({ partName, vehicleContext, diagnosisSummary });
 
-    // Save to diagnosis if diagnosisId provided
+    // Save to diagnosis if diagnosisId provided and this request has access to it
     if (diagnosisId) {
-      await Diagnosis.findOneAndUpdate(
-        req.session?.userId ? { _id: diagnosisId, userId: req.session.userId } : { _id: diagnosisId },
-        { $push: { replacementProcesses: { partName, ...result } } }
-      );
+      const query = buildDiagnosisAccessQuery(req, diagnosisId);
+      if (query) {
+        await Diagnosis.findOneAndUpdate(
+          query,
+          { $push: { replacementProcesses: { partName, ...result } } }
+        );
+      }
     }
 
     res.json(result);

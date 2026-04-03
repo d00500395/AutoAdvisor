@@ -6,12 +6,13 @@
     <h3 class="card__title">Quick Actions</h3>
     <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
       <router-link to="/diagnose" class="btn btn--primary">New Diagnosis</router-link>
-      <router-link to="/vehicles" class="btn btn--outline">My Garage</router-link>
+      <router-link v-if="isAuthenticated" to="/vehicles" class="btn btn--outline">My Garage</router-link>
+      <router-link v-else to="/login" class="btn btn--outline">Sign In</router-link>
     </div>
   </div>
 
   <!-- Past Diagnoses -->
-  <div class="card" style="margin-top:1.5rem;">
+  <div v-if="isAuthenticated" class="card" style="margin-top:1.5rem;">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.5rem;">
       <h3 class="card__title" style="margin-bottom:0;">Past Diagnoses</h3>
       <button v-if="diagnoses.length > 0" class="btn btn--outline btn--small" style="color:var(--color-danger);border-color:var(--color-danger);" @click="showDeleteAllModal = true">Delete All</button>
@@ -38,6 +39,13 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div v-else class="card" style="margin-top:1.5rem;">
+    <h3 class="card__title">Save Features</h3>
+    <p style="color:var(--color-text-muted);margin:0;">
+      Sign in to save vehicles to your garage and keep a private diagnosis history.
+    </p>
   </div>
 
   <!-- Delete All Confirmation Modal -->
