@@ -21,7 +21,7 @@ function formatName(name) {
 router.get('/years', (req, res) => {
   const top = new Date().getFullYear() + 1;
   const years = [];
-  for (let y = top; y >= 1992; y--) years.push(y);
+  for (let y = top; y >= 1979; y--) years.push(y);
   res.json(years);
 });
 

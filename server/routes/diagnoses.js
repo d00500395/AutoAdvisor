@@ -59,6 +59,8 @@ function buildDiagnosisListFilter(req) {
 
 // POST /api/diagnoses — Submit a symptom, triggers the AI agent
 router.post('/', async (req, res) => {
+  const startedAt = Date.now();
+
   try {
     await cleanupExpiredGuestDiagnoses();
 
@@ -83,10 +85,12 @@ router.post('/', async (req, res) => {
     rememberGuestDiagnosis(req, diagnosis._id);
 
     // Run the agent
+    console.log('[diagnosis] starting agent run for', vehicleContext);
     const agentResult = await runDiagnosis({
       symptomDescription: symptomDescription.trim(),
       vehicleContext,
     });
+    console.log(`[diagnosis] agent completed in ${Date.now() - startedAt}ms`);
 
     // Check if the agent needs clarification
     if (agentResult.needsClarification && agentResult.clarifyingQuestions.length > 0) {
@@ -112,7 +116,7 @@ router.post('/', async (req, res) => {
       ragAvailable: agentResult.ragAvailable ?? false,
     });
   } catch (err) {
-    console.error('Diagnosis error:', err);
+    console.error(`[diagnosis] error after ${Date.now() - startedAt}ms:`, err);
     return res.status(500).json({ error: 'Diagnosis failed. Please try again.' });
   }
 });

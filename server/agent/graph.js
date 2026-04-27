@@ -8,11 +8,15 @@ const { isVehicleIngested, triggerBackgroundIngest } = require('../rag/backgroun
 // ─────────────────────────────────────────────────────────────────────
 // LLM — same Ollama instance pattern as llm/app.js
 // ─────────────────────────────────────────────────────────────────────
+const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 30000);
+const MAX_RAG_CHUNKS = Number(process.env.RAG_TOP_K || 3);
+const MAX_RAG_CHARS = Number(process.env.RAG_CHUNK_CHAR_LIMIT || 900);
+
 const llm = new ChatOllama({
   baseUrl: process.env.OLLAMA_URL || 'http://golem:11434',
   model: process.env.OLLAMA_MODEL || 'gpt-oss:20b',
   temperature: 0,
-  timeout: 30000,
+  timeout: OLLAMA_TIMEOUT_MS,
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -112,6 +116,83 @@ function vehicleString(ctx) {
     .filter(Boolean).join(' ');
 }
 
+function inferSymptomCategory(description = '') {
+  const text = String(description).toLowerCase();
+  const categoryMatchers = [
+    ['brakes', /\b(brake|rotor|pad|caliper|abs|stopping|squeal|grind)\b/],
+    ['engine', /\b(engine|misfire|spark|plug|stall|rough idle|timing|knock|tick|oil burning)\b/],
+    ['transmission', /\b(transmission|gear|shift|shifting|slip|slipping|clutch|torque converter)\b/],
+    ['electrical', /\b(battery|alternator|starter|fuse|wiring|electrical|light|dashboard|sensor)\b/],
+    ['suspension', /\b(strut|shock|suspension|bounce|bumpy|control arm)\b/],
+    ['steering', /\b(steering|power steering|wheel pull|alignment|turning)\b/],
+    ['cooling', /\b(overheat|coolant|radiator|thermostat|water pump|temperature)\b/],
+    ['heating-ac', /\b(ac|a\/c|air conditioning|heater|heat not working|blower)\b/],
+    ['exhaust', /\b(exhaust|muffler|catalytic|cat converter|emissions)\b/],
+    ['fuel-system', /\b(fuel|injector|pump|filter|no start|hard start)\b/],
+    ['tires-wheels', /\b(tire|tyre|wheel|rim|balance|flat)\b/],
+    ['body-exterior', /\b(door|window|mirror|hood|trunk|bumper|paint)\b/],
+    ['interior', /\b(seat|radio|screen|interior|dashboard trim|window switch)\b/],
+  ];
+
+  for (const [category, pattern] of categoryMatchers) {
+    if (pattern.test(text)) return category;
+  }
+
+  return 'other';
+}
+
+function needsClarificationHeuristically(description = '') {
+  const text = String(description).toLowerCase().trim();
+  if (!text) return true;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  const hasDiagnosticSignal = /\b(when|while|after|before|cold|warm|hot|idle|startup|accelerat|brak|turn|left|right|mph|rpm|check engine|code|smell|vibration|leak|stall|rough|misfire|click|grind|squeal|humming|whining|only)\b/.test(text);
+  const isVeryVague = /^(help|not working|issue|problem|weird noise|car makes noise|what's wrong)[.!? ]*$/i.test(text);
+
+  if (isVeryVague) return true;
+  if (wordCount < 6) return true;
+  if (wordCount < 12 && !hasDiagnosticSignal) return true;
+
+  return false;
+}
+
+function trimRagContent(content = '') {
+  const text = String(content).trim();
+  if (text.length <= MAX_RAG_CHARS) return text;
+  return `${text.slice(0, MAX_RAG_CHARS)}…`;
+}
+
+function extractFirstJsonObject(content = '') {
+  const cleaned = String(content)
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```json?\n?/g, '')
+    .replace(/```/g, '')
+    .trim();
+
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('No JSON object found in response');
+  }
+
+  return jsonMatch[0];
+}
+
+function normalizeRecommendedParts(parts) {
+  if (!Array.isArray(parts)) return [];
+
+  return parts
+    .filter((part) => part && typeof part === 'object')
+    .slice(0, 5)
+    .map((part) => ({
+      partName: String(part.partName || '').trim(),
+      partCategory: String(part.partCategory || 'General').trim(),
+      oemPartNumber: String(part.oemPartNumber || '').trim(),
+      causationProbability: Math.max(0, Math.min(100, Number(part.causationProbability || 0))),
+    }))
+    .filter((part) => part.partName);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // NODE 1: symptom_classifier
 // Categorizes the symptom into a domain (brakes, engine, electrical, etc.)
@@ -119,22 +200,8 @@ function vehicleString(ctx) {
 async function symptomClassifier(state) {
   console.log('--- NODE: symptom_classifier ---');
 
-  const messages = [
-    new SystemMessage(
-      `You are an expert automotive diagnostic classifier. Given a vehicle and symptom description, classify the symptom into exactly ONE primary category. Respond with ONLY the category name, nothing else.
-
-Categories: brakes, engine, transmission, electrical, suspension, steering, cooling, heating-ac, exhaust, fuel-system, tires-wheels, body-exterior, interior, other`
-    ),
-    new HumanMessage(
-      `Vehicle: ${vehicleString(state.vehicleContext)}
-${state.vehicleContext.mileage ? `Mileage: ${state.vehicleContext.mileage}` : ''}
-Symptom: ${state.symptomDescription}`
-    ),
-  ];
-
-  const response = await llm.invoke(messages);
-  const category = response.content.trim().toLowerCase();
-  console.log('Classified symptom category:', category);
+  const category = inferSymptomCategory(state.symptomDescription);
+  console.log('Classified symptom category (heuristic):', category);
 
   return { symptomCategory: category };
 }
@@ -164,7 +231,7 @@ async function ragRetriever(state) {
       query,
       category: state.symptomCategory,
       vehicleContext: state.vehicleContext,
-      topK: 5,
+      topK: MAX_RAG_CHUNKS,
       minScore: 0.3,
     });
 
@@ -173,12 +240,13 @@ async function ragRetriever(state) {
       return { ragContext: [], ragSourcesUsed: [], ragAvailable: true };
     }
 
-    console.log(`Found ${results.length} relevant chunks (top score: ${results[0].score.toFixed(3)})`);
+    const trimmedResults = results.slice(0, MAX_RAG_CHUNKS);
+    console.log(`Found ${trimmedResults.length} relevant chunks (top score: ${trimmedResults[0].score.toFixed(3)})`);
 
-    const ragContext = results.map(r =>
-      `[Source: ${r.source || 'manual'}] ${r.content}`
+    const ragContext = trimmedResults.map(r =>
+      `[Source: ${r.source || 'manual'}] ${trimRagContent(r.content)}`
     );
-    const ragSourcesUsed = results.map(r => ({
+    const ragSourcesUsed = trimmedResults.map(r => ({
       source: r.source,
       title: r.title,
       score: r.score,
@@ -204,28 +272,8 @@ async function clarityChecker(state) {
     return { needsClarification: false };
   }
 
-  const messages = [
-    new SystemMessage(
-      `You are an automotive diagnostic assistant evaluating whether you have enough information to make a diagnosis.
-
-Given a vehicle, symptom description, and symptom category, decide if you can make a confident diagnosis or need 1-2 clarifying questions.
-
-Respond with ONLY "sufficient" or "insufficient". Nothing else.
-
-Lean toward "sufficient" — only say "insufficient" if the symptom is truly ambiguous (e.g., "car makes noise" with no details about when, where, or what type of noise).`
-    ),
-    new HumanMessage(
-      `Vehicle: ${vehicleString(state.vehicleContext)}
-${state.vehicleContext.mileage ? `Mileage: ${state.vehicleContext.mileage}` : ''}
-Symptom: ${state.symptomDescription}
-Category: ${state.symptomCategory}`
-    ),
-  ];
-
-  const response = await llm.invoke(messages);
-  const answer = response.content.trim().toLowerCase();
-  const needsClarification = answer.includes('insufficient');
-  console.log('Clarity check result:', answer, '→ needsClarification:', needsClarification);
+  const needsClarification = needsClarificationHeuristically(state.symptomDescription);
+  console.log('Clarity check result (heuristic):', needsClarification ? 'insufficient' : 'sufficient');
 
   return { needsClarification };
 }
@@ -295,11 +343,20 @@ You MUST respond with a JSON object matching this exact schema:
 {
   "likelyCause": "plain-language explanation of the root cause",
   "confidenceLevel": "high" | "medium" | "low",
+  "recommendedParts": [
+    {
+      "partName": "descriptive part name",
+      "partCategory": "category name",
+      "oemPartNumber": "",
+      "causationProbability": 0-100
+    }
+  ],
   "repairDifficulty": "DIY-Easy" | "DIY-Moderate" | "Shop-Recommended",
   "urgency": "Drive carefully" | "Fix soon" | "Stop driving",
   "additionalNotes": "caveats or related issues to watch for"
 }
 
+Include 1-4 likely parts in "recommendedParts" when appropriate. Use generic descriptive names only, and leave "oemPartNumber" blank unless the provided repair knowledge explicitly shows an OEM number.
 Be specific to the vehicle make/model/year. Base your reasoning on common failure patterns for this vehicle.
 Never mention a specific transmission family/code (e.g., 4L80E, 6L80, 4R70W, 5R55E) unless that exact code appears in the provided "Relevant repair knowledge" section.
 Respond with ONLY the JSON object, no markdown fences or extra text.`
@@ -316,14 +373,29 @@ Category: ${state.symptomCategory}${clarifySection}${ragSection}`
 
   let result;
   try {
-    // Strip markdown code fences if present
-    const cleaned = response.content.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    result = JSON.parse(cleaned);
+    const cleaned = extractFirstJsonObject(response.content);
+    const parsed = JSON.parse(cleaned);
+    const normalized = {
+      likelyCause: String(parsed.likelyCause || '').trim(),
+      confidenceLevel: parsed.confidenceLevel,
+      recommendedParts: normalizeRecommendedParts(parsed.recommendedParts),
+      repairDifficulty: parsed.repairDifficulty,
+      urgency: parsed.urgency,
+      additionalNotes: String(parsed.additionalNotes || '').trim(),
+    };
+
+    const validated = DiagnosisOutputSchema.safeParse(normalized);
+    if (!validated.success) {
+      throw new Error(validated.error.message);
+    }
+
+    result = validated.data;
   } catch (err) {
     console.error('Failed to parse diagnosis JSON:', err.message);
     result = {
       likelyCause: response.content.trim(),
       confidenceLevel: 'low',
+      recommendedParts: [],
       repairDifficulty: 'Shop-Recommended',
       urgency: 'Drive carefully',
       additionalNotes: 'The AI produced a non-structured response. Please consult a mechanic.',
@@ -350,6 +422,17 @@ Category: ${state.symptomCategory}${clarifySection}${ragSection}`
 // ─────────────────────────────────────────────────────────────────────
 async function partsRecommender(state) {
   console.log('--- NODE: parts_recommender ---');
+
+  const existingParts = normalizeRecommendedParts(state.diagnosisResult?.recommendedParts);
+  if (existingParts.length > 0) {
+    console.log('Parts already included in diagnosis — skipping extra LLM call');
+    return {
+      diagnosisResult: {
+        ...state.diagnosisResult,
+        recommendedParts: existingParts,
+      },
+    };
+  }
 
   const messages = [
     new SystemMessage(

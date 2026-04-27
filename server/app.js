@@ -9,6 +9,7 @@ const path = require('path');
 const vehicleRoutes = require('./routes/vehicles');
 const garageRoutes = require('./routes/garage');
 const diagnosisRoutes = require('./routes/diagnoses');
+const partsRoutes = require('./routes/parts');
 const ragRoutes = require('./routes/rag');
 const userRoutes = require('./routes/users');
 const { requireAuth, optionalAuth } = require('./middleware/auth');
@@ -92,6 +93,7 @@ function mountApiRoutes(apiBase) {
   // Protected API routes (require login)
   app.use(`${apiBase}/garage`, requireAuth, garageRoutes);
   app.use(`${apiBase}/diagnoses`, optionalAuth, diagnosisRoutes);
+  app.use(`${apiBase}/parts`, optionalAuth, partsRoutes);
   app.use(`${apiBase}/rag`, ragRoutes);
 }
 

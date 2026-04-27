@@ -187,6 +187,15 @@ A full-stack web application that helps drivers diagnose vehicle symptoms using 
 
 ## Resources
 
+## Shared Auth Notes
+
+- Email/password auth and Google sign-in both use the same `users` collection.
+- Google sign-in requires `GOOGLE_CLIENT_ID` in the server environment and verifies the Google ID token server-side.
+- To share auth across sibling apps on one domain, point both frontends at this backend and configure:
+  - `ALLOWED_ORIGINS` to include each frontend origin
+  - `SESSION_COOKIE_DOMAIN` to the shared parent domain when needed
+  - `SESSION_COOKIE_SECURE=true` in production
+
 ### GarageVehicle
 
 A user's saved vehicle in their garage. Stores the vehicle configuration and supports nicknames and a default designation.
